@@ -4,14 +4,12 @@ import sys, json, os
 d = sys.argv[1]
 L = lambda n: json.load(open(os.path.join(d, n), encoding='utf-8'))
 meta = L('meta.json'); par = L('parasites.json'); hosts = L('hosts.json'); taxa = L('taxa.json')
-seed = set(json.load(open(os.path.join(os.path.dirname(__file__), 'lista_semente.json'))))
-got = {p['i'][5:] for p in par}
-cob = len(seed & got) / max(1, len(seed))
 problemas = []
-if len(par) < 9000: problemas.append(f'poucos parasitos: {len(par)}')
+if len(par) < 7000: problemas.append(f'poucos parasitos: {len(par)}')
 if len(hosts) < 1500: problemas.append(f'poucos hospedeiros: {len(hosts)}')
-if len(taxa) < 20000: problemas.append(f'poucos táxons na hierarquia: {len(taxa)}')
-if cob < 0.95: problemas.append(f'só {cob:.1%} da lista-semente continua no CTFB')
-print(f"parasitos={len(par)} hospedeiros={len(hosts)} táxons={len(taxa)} cobertura da semente={cob:.1%} novos pela regra={len(meta.get('addedByRule', []))}")
+if len(taxa) < 15000: problemas.append(f'poucos táxons na hierarquia: {len(taxa)}')
+if any('parasitoide' in (p.get('lf') or '').lower() and not ({'endoparasito','ectoparasito'} & set((p.get('lf') or '').lower().split(';'))) for p in par if p.get('su') == 'válido'):
+    problemas.append('há parasitoides sem endo/ectoparasito no resultado')
+print(f"parasitos={len(par)} hospedeiros={len(hosts)} táxons={len(taxa)} novos={len(meta.get('addedByRule', []))} fora da lista antiga={len(meta.get('removedFromSeed', []))}")
 if problemas:
     print('PROBLEMAS:', '; '.join(problemas)); sys.exit(1)

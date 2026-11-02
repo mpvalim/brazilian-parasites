@@ -56,14 +56,15 @@ def main(csv, outdir, seed_path=None, seed_dir=None):
     idx = df.set_index('taxonID', drop=False)
     sp = df[df.taxonRank.isin(['species','subspecies'])]
     seed = set(json.load(open(seed_path))) if seed_path else set()
-    lf = sp.lifeForm.str.contains('parasit'); host = (sp.animalHostIds!='')
-    auto = set(sp[(lf|host) & (sp.taxonomicStatus=='accepted')].taxonID)
-    accepted_ids = set(sp[sp.taxonomicStatus=='accepted'].taxonID)
-    chosen = (seed & set(sp.taxonID)) | auto
+    # Regra do app: só endoparasitos e ectoparasitos (forma de vida do CTFB). Parasitoides ficam de fora.
+    PAR_TOKENS = {'endoparasito', 'ectoparasito'}
+    is_par = sp.lifeForm.str.lower().apply(lambda v: bool(PAR_TOKENS & set(x.strip() for x in v.split(';'))))
+    chosen = set(sp[is_par & (sp.taxonomicStatus == 'accepted')].taxonID)
     # sinônimos cujo nome aceito é um parasito escolhido
-    syn = set(sp[(sp.taxonomicStatus!='accepted') & sp.acceptedNameUsageID.isin(chosen)].taxonID)
+    syn = set(sp[(sp.taxonomicStatus != 'accepted') & sp.acceptedNameUsageID.isin(chosen)].taxonID)
     ids = chosen | syn
-    added = sorted(auto - seed) if seed else []
+    added = sorted(chosen - seed) if seed else []
+    removed = sorted(seed - chosen) if seed else []
     def host_rec(hid):
         if hid not in idx.index: return None
         h = idx.loc[hid]
@@ -151,9 +152,9 @@ def main(csv, outdir, seed_path=None, seed_dir=None):
     used = {'PHYLUM_AUTH':{o['phy'] for o in out}, 'CLASS_AUTH':{o['cl'] for o in out if o.get('cl')}, 'ORDER_AUTH':{o['o'] for o in out if o.get('o')}, 'SUBORDER_AUTH':{o['so'] for o in out if o.get('so')}, 'SUPERFAMILY_AUTH':{o['sf'] for o in out if o.get('sf')}, 'FAMILY_AUTH':{t['familia'] for t in taxa if t['familia']}, 'SUBFAMILY_AUTH':{t['subfamilia'] for t in taxa if t['subfamilia']}, 'GENUS_AUTH':{t['n'] for t in taxa if t['rk']=='genus'}}
     auths = {k:{n:a for n,a in v.items() if n in used[k]} for k,v in auths.items()}
     import os; os.makedirs(outdir, exist_ok=True)
+    _seed = json.load(open(seed_dir, encoding='utf-8')) if seed_dir and os.path.exists(seed_dir) else {}
     def seed(name, default):
-        p = os.path.join(seed_dir or '', name)
-        return json.load(open(p, encoding='utf-8')) if seed_dir and os.path.exists(p) else default
+        return _seed.get(name.replace('.json', ''), default)
     # a semente nunca perde nada: o que o app já tinha continua, o CTFB atual prevalece nos conflitos
     sa = seed('authorship.json', {}); auths = {k: {**sa.get(k, {}), **auths.get(k, {})} for k in set(sa) | set(auths)}
     ids_by_name = {**seed('taxon_ids.json', {}), **ids_by_name}
@@ -170,7 +171,7 @@ def main(csv, outdir, seed_path=None, seed_dir=None):
     json.dump(out, open(os.path.join(outdir,'parasites.json'),'w',encoding='utf-8'), ensure_ascii=False, separators=(',',':'))
     W = lambda name, obj: json.dump(obj, open(os.path.join(outdir,name),'w',encoding='utf-8'), ensure_ascii=False, separators=(',',':'))
     W('hosts.json', hosts); W('taxa.json', taxa); W('taxon_ids.json', ids_by_name); W('genus_dict.json', genus_dict); W('authorship.json', auths); W('host_habitat.json', hab)
-    json.dump({'generatedAt': datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat()+'Z', 'source':'mv_planilha_extendida', 'nParasites': len(out), 'nHosts': len(hosts), 'nTaxa': len(taxa), 'nAccepted': sum(1 for o in out if o['su']=='válido'), 'addedByRule': added}, open(os.path.join(outdir,'meta.json'),'w',encoding='utf-8'), ensure_ascii=False)
+    json.dump({'generatedAt': datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat()+'Z', 'source':'mv_planilha_extendida', 'nParasites': len(out), 'nHosts': len(hosts), 'nTaxa': len(taxa), 'nAccepted': sum(1 for o in out if o['su']=='válido'), 'addedByRule': added, 'removedFromSeed': removed}, open(os.path.join(outdir,'meta.json'),'w',encoding='utf-8'), ensure_ascii=False)
     print('parasitos:', len(out), '| novos pela regra:', len(added))
 
 if __name__ == '__main__':
