@@ -1,0 +1,42 @@
+name: Teste de acesso ao CTFB
+
+on:
+  workflow_dispatch:
+
+jobs:
+  teste:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Testar endpoints do CTFB e do IPT
+        run: |
+          set +e
+          UA_BROWSER="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+
+          testar () {
+            nome="$1"; url="$2"; ua="$3"
+            echo ""
+            echo "=== $nome ==="
+            echo "URL: $url"
+            codigo=$(curl -sS -L --max-time 60 -A "$ua" -H "Origin: https://sites.google.com" \
+              -D /tmp/cab.txt -o /tmp/corpo.txt -w "%{http_code}" "$url")
+            echo "HTTP: $codigo"
+            echo "--- cabeçalhos principais ---"
+            grep -iE "^(content-type|content-length|access-control|server|last-modified)" /tmp/cab.txt
+            echo "--- início do corpo ---"
+            head -c 400 /tmp/corpo.txt
+            echo ""
+          }
+
+          testar "API REST (hospedeiros), agente padrão" \
+            "https://fauna.jbrj.gov.br/rest/v_hospedeiros?limit=3" "curl/8"
+          testar "API REST (hospedeiros), agente de navegador" \
+            "https://fauna.jbrj.gov.br/rest/v_hospedeiros?limit=3" "$UA_BROWSER"
+          testar "CSV da planilha extendida (100 linhas)" \
+            "https://fauna.jbrj.gov.br/csv/mv_planilha_extendida?limit=100" "$UA_BROWSER"
+          testar "IPT (página do recurso)" \
+            "https://ipt.jbrj.gov.br/jbrj/resource?r=catalogo_taxonomico_da_fauna_do_brasil" "$UA_BROWSER"
+
+          echo ""
+          echo "=== Tamanho do CSV completo (cabeçalho apenas) ==="
+          curl -sSI -L --max-time 60 -A "$UA_BROWSER" \
+            "https://fauna.jbrj.gov.br/csv/mv_planilha_extendida" | grep -iE "^(HTTP|content-length|content-type|last-modified)"
