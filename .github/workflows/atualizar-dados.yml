@@ -1,0 +1,58 @@
+name: Atualizar dados do CTFB e publicar
+
+on:
+  schedule:
+    - cron: '30 6 * * *'   # todo dia, 03:30 no horário de Brasília (o CTFB atualiza às 02:00)
+  workflow_dispatch:        # permite rodar manualmente pela aba Actions
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependências
+        run: pip install pandas
+
+      - name: Baixar a planilha do CTFB
+        run: |
+          curl -sS -L --fail --retry 3 --retry-delay 30 --max-time 1500 \
+            -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36" \
+            -o /tmp/mv.csv "https://fauna.jbrj.gov.br/csv/mv_planilha_extendida"
+          ls -l /tmp/mv.csv
+          test "$(stat -c%s /tmp/mv.csv)" -gt 100000000
+          head -c 300 /tmp/mv.csv | grep -q taxonID
+
+      - name: Gerar os dados do app
+        run: |
+          mkdir -p site/data
+          python pipeline/build_data.py /tmp/mv.csv site/data pipeline/lista_semente.json pipeline/seed
+          python pipeline/check_data.py site/data
+          cp index.html site/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
